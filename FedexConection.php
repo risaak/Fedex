@@ -710,7 +710,7 @@ class FedexConection {
                 'AccountNumber' => $r->getAccount(), 
                 'MeterNumber' => $r->getMeterNumber(),
                 'Localization' => [
-                    'LanguageCode' => 'EN',
+                    'LanguageCode' => 'ES',
                     'LocaleCode' => 'ES'
                 ]
             ],
@@ -744,6 +744,7 @@ class FedexConection {
                     'Address' => [
                         'StreetLines' => $r->getDestStreet(),
                         'StateOrProvinceCode' => $r->getDestStatecode(),
+                        'City' => $r->getDestCity(),
                         'PostalCode' => $r->getDestPostal(),
                         'CountryCode' => $r->getDestCountry(),
                         'Residential' => false,
@@ -759,7 +760,7 @@ class FedexConection {
                 ],
                 'LabelSpecification' => [
                     'LabelFormatType' => 'COMMON2D',
-                    'ImageType' => 'PNG'
+                    'ImageType' => 'PDF'
                 ],
                 'RateRequestTypes' => 'LIST',
                 'PackageCount' => '1',

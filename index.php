@@ -60,11 +60,11 @@ $_request = [
     'dest_name' => 'Andrea',
     'dest_phone' => '3317823032',
     'dest_email' => 'andrea@gmail.com',
-    'dest_street' => 'Albuquerque',
-    'dest_city' => 'Aguascalientes',
-    'dest_state_code' => 'AG',
+    'dest_street' => 'Los  alamos',
+    'dest_city' => 'Zapopan',
+    'dest_state_code' => 'JA',
     'dest_country' => 'MX',
-    'dest_postcode' => '20298',
+    'dest_postcode' => '45160',
 
 ];
 print_r($obj->collectShip($_request));
