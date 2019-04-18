@@ -81,7 +81,7 @@ class FedexConection {
      *
      * @var string
      */
-    protected $_trackServiceWsdl = null;
+    protected $_trackServiceWsdl;
 
     /**
      * Purpose of rate request
@@ -142,9 +142,9 @@ class FedexConection {
 
     public function __construct($debug = false) {
         $wsdlBasePath = __DIR__ . '/wsdl/';
-        $this->_shipServiceWsdl = $wsdlBasePath . 'ShipService_v10.wsdl';
+        $this->_shipServiceWsdl = $wsdlBasePath . 'ShipService_v23.wsdl';
         $this->_rateServiceWsdl = $wsdlBasePath . 'RateService_v24.wsdl';
-        $this->_trackServiceWsdl = $wsdlBasePath . 'TrackService_v10.wsdl';
+        $this->_trackServiceWsdl = $wsdlBasePath . 'TrackService_v16.wsdl';
         $this->serializer = $serializer = new Json();
         $this->soapClientFactory = new ClientFactory();
         $this->debug = $debug;
@@ -182,7 +182,7 @@ class FedexConection {
      */
     protected function _createShipSoapClient()
     {
-        return $this->_createSoapClient($this->_shipServiceWsdl, 1);
+        return $this->_createSoapClient($this->_shipServiceWsdl);
     }
 
     /**
@@ -192,7 +192,7 @@ class FedexConection {
      */
     protected function _createTrackSoapClient()
     {
-        return $this->_createSoapClient($this->_trackServiceWsdl, 1);
+        return $this->_createSoapClient($this->_trackServiceWsdl);
     }
 
     /**
@@ -267,8 +267,34 @@ class FedexConection {
      */
     public function collectRates($request)
     {
-        $this->setRequest($request);
+        $this->setRequestRate($request);
         $this->_getQuotes();
+        return $this->getResult();
+    }
+
+    /**
+     * Collect and get rates
+     *
+     * @param $request
+     * @return Result|bool|null
+     */
+    public function collectTrack($request)
+    {
+        $this->setRequestRate($request);
+        $this->_getQuotes();
+        return $this->getResult();
+    }
+
+    /**
+     * Collect and get rates
+     *
+     * @param $request
+     * @return Result|bool|null
+     */
+    public function collectShip($request)
+    {
+        $this->setRequestShip($request);
+        $this->_getQuotesShip();
         return $this->getResult();
     }
 
@@ -280,7 +306,7 @@ class FedexConection {
      * @SuppressWarnings(PHPMD.CyclomaticComplexity)
      * @SuppressWarnings(PHPMD.NPathComplexity)
      */
-    public function setRequest($request)
+    public function setRequestRate($request)
     {
         $this->_request = $request;
         $r = new DataObject();
@@ -300,10 +326,21 @@ class FedexConection {
         $r->setPackaging($packaging);
 
         // iso2_code
+        $r->setOrigName($request['origin_name']);
+        $r->setOrigPhone($request['origin_phone']);
+        $r->setOrigEmail($request['origin_email']);
+        $r->setOrigStreet($request['origin_street']);
+        $r->setOrigCity($request['origin_city']);
+        $r->setOrigStatecode($request['origin_state_code']);
         $r->setOrigCountry($request['origin_country']);
         $r->setOrigPostal($request['origin_postcode']);
 
         // iso2_code
+        $r->setDestName($request['dest_name']);
+        $r->setDestPhone($request['dest_phone']);
+        $r->setDestEmail($request['dest_email']);
+        $r->setDestStreet($request['dest_street']);
+        $r->setDestStatecode($request['dest_state_code']);
         $r->setDestCountry($request['dest_country']);
         $r->setDestPostal($request['dest_postcode']);
         $r->setDestCity($request['dest_city']);
@@ -320,6 +357,146 @@ class FedexConection {
         if (array_key_exists('smartpost_hubid',$request)) {
             $r->setHubid($request['smartpost_hubid']);
         }
+        //$r->setCurrency($request['currency']);
+
+        $this->setRawRequest($r);
+
+        return $this;
+    }
+
+    /**
+     * Prepare and set request to this instance
+     *
+     * @param Array $request
+     * @return $this
+     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
+     * @SuppressWarnings(PHPMD.NPathComplexity)
+     */
+    public function setRequestTrack($request)
+    {
+        $this->_request = $request;
+        $r = new DataObject();
+
+        $r->setAccount($this->getFedexAccount());
+        if (array_key_exists('dropoff',$request)) {
+            $dropoff = $request['dropoff'];
+        } else {
+            $dropoff = $request['dropoff']['REGULARPICKUP'];
+        }
+        $r->setDropoffType($dropoff);
+        if (array_key_exists('packaging',$request)) {
+            $packaging = $request['packaging'];
+        } else {
+            $packaging = $code['packaging']['YOURPACKAGING'];
+        }
+        $r->setPackaging($packaging);
+
+        // iso2_code
+        $r->setOrigName($request['origin_name']);
+        $r->setOrigPhone($request['origin_phone']);
+        $r->setOrigEmail($request['origin_email']);
+        $r->setOrigStreet($request['origin_street']);
+        $r->setOrigCity($request['origin_city']);
+        $r->setOrigStatecode($request['origin_state_code']);
+        $r->setOrigCountry($request['origin_country']);
+        $r->setOrigPostal($request['origin_postcode']);
+
+        // iso2_code
+        $r->setDestName($request['dest_name']);
+        $r->setDestPhone($request['dest_phone']);
+        $r->setDestEmail($request['dest_email']);
+        $r->setDestStreet($request['dest_street']);
+        $r->setDestStatecode($request['dest_state_code']);
+        $r->setDestCountry($request['dest_country']);
+        $r->setDestPostal($request['dest_postcode']);
+        $r->setDestCity($request['dest_city']);
+
+        $r->setWeight($request['weight']);
+        //$r->freeMethodWeight = $request['free_method_weight'];
+        $r->setValue($request['value']);
+        $r->setMeterNumber($this->getMeterNumber());
+        $r->setKey($this->getKey());
+        $r->setPassword($this->getPassword());
+        if (array_key_exists('isReturn',$request)) {
+            $r->setIsReturn($request['isReturn']);
+        }
+        if (array_key_exists('smartpost_hubid',$request)) {
+            $r->setHubid($request['smartpost_hubid']);
+        }
+        //$r->setCurrency($request['currency']);
+
+        $this->setRawRequest($r);
+
+        return $this;
+    }
+
+    /**
+     * Prepare and set request to this instance
+     *
+     * @param Array $request
+     * @return $this
+     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
+     * @SuppressWarnings(PHPMD.NPathComplexity)
+     */
+    public function setRequestShip($request)
+    {
+        $this->_request = $request;
+        $r = new DataObject();
+
+        $r->setAccount($this->getFedexAccount());
+        if (array_key_exists('dropoff',$request)) {
+            $dropoff = $request['dropoff'];
+        } else {
+            $dropoff = $request['dropoff']['REGULARPICKUP'];
+        }
+        $r->setDropoffType($dropoff);
+        if (array_key_exists('packaging',$request)) {
+            $packaging = $request['packaging'];
+        } else {
+            $packaging = $code['packaging']['YOURPACKAGING'];
+        }
+        $r->setPackaging($packaging);
+        if (array_key_exists('packaging',$request)) {
+            $serviceType = $request['ServiceType'];
+        } else {
+            $serviceType = $code['ServiceType']['STANDARD_OVERNIGHT'];
+        }
+        $r->setServiceType($serviceType);
+
+
+        // iso2_code
+        $r->setOrigName($request['origin_name']);
+        $r->setOrigPhone($request['origin_phone']);
+        $r->setOrigEmail($request['origin_email']);
+        $r->setOrigStreet($request['origin_street']);
+        $r->setOrigCity($request['origin_city']);
+        $r->setOrigStatecode($request['origin_state_code']);
+        $r->setOrigCountry($request['origin_country']);
+        $r->setOrigPostal($request['origin_postcode']);
+
+        // iso2_code
+        $r->setDestName($request['dest_name']);
+        $r->setDestPhone($request['dest_phone']);
+        $r->setDestEmail($request['dest_email']);
+        $r->setDestStreet($request['dest_street']);
+        $r->setDestStatecode($request['dest_state_code']);
+        $r->setDestCountry($request['dest_country']);
+        $r->setDestPostal($request['dest_postcode']);
+        $r->setDestCity($request['dest_city']);
+
+       // $r->setWeight($request['weight']);
+        //$r->freeMethodWeight = $request['free_method_weight'];
+        //$r->setValue($request['value']);
+        $r->setMeterNumber($this->getMeterNumber());
+        $r->setKey($this->getKey());
+        $r->setPassword($this->getPassword());
+       /* if (array_key_exists('isReturn',$request)) {
+            $r->setIsReturn($request['isReturn']);
+        }
+        if (array_key_exists('smartpost_hubid',$request)) {
+            $r->setHubid($request['smartpost_hubid']);
+        }*/
+        //$r->setCurrency($request['currency']);
 
         $this->setRawRequest($r);
 
@@ -327,32 +504,52 @@ class FedexConection {
     }
 
     /** 
-    * Do remote request for and handle errors
-    *
-    * @return Result
+      * Do remote request for and handle errors
+      *
+      * @return Result
     */
     protected function _getQuotes()
     {
-    $this->_result = new RateResult();
-    // make separate request for Smart Post method
-    $allowedMethods = $this->allowedMethods;
-    if (in_array(self::RATE_REQUEST_SMARTPOST, $allowedMethods)) {
-        $response = $this->_doRatesRequest(self::RATE_REQUEST_SMARTPOST);
-        $preparedSmartpost = $this->_prepareRateResponse($response);
-        if (!$preparedSmartpost->getError()) {
-            $this->_result->append($preparedSmartpost);
+        $this->_result = new RateResult();
+        // make separate request for Smart Post method
+        $allowedMethods = $this->allowedMethods;
+        if (in_array(self::RATE_REQUEST_SMARTPOST, $allowedMethods)) {
+            $response = $this->_doRatesRequestRate(self::RATE_REQUEST_SMARTPOST);
+            $preparedSmartpost = $this->_prepareRateResponse($response);
+            if (!$preparedSmartpost->getError()) {
+                $this->_result->append($preparedSmartpost);
+            }
         }
+        // make general request for all methods
+        $response = $this->_doRatesRequestRate(self::RATE_REQUEST_GENERAL);
+        $preparedGeneral = $this->_prepareRateResponse($response);
+        if (!$preparedGeneral->getError()
+            || $this->_result->getError() && $preparedGeneral->getError()
+            || empty($this->_result->getAllRates())
+        ) {
+            $this->_result->append($preparedGeneral);
+        }
+        return $this->_result;
     }
-    // make general request for all methods
-    $response = $this->_doRatesRequest(self::RATE_REQUEST_GENERAL);
-    $preparedGeneral = $this->_prepareRateResponse($response);
-    if (!$preparedGeneral->getError()
-        || $this->_result->getError() && $preparedGeneral->getError()
-        || empty($this->_result->getAllRates())
-    ) {
-        $this->_result->append($preparedGeneral);
-    }
-    return $this->_result;
+
+    /** 
+      * Do remote request for and handle errors
+      *
+      * @return Result
+    */
+    protected function _getQuotesShip()
+    {
+        $this->_result = new RateResult();
+        // make separate request for Smart Post method
+        //$allowedMethods = $this->allowedMethods;
+        //if (in_array(self::RATE_REQUEST_SMARTPOST, $allowedMethods)) {
+            $response = $this->_doRatesRequestShip(null);
+          //  $preparedSmartpost = $this->_prepareRateResponse($response);
+            //if (!$preparedSmartpost->getError()) {
+              //  $this->_result->append($preparedSmartpost);
+            //}
+        //}
+        return $this->_result;
     }
 
     /**
@@ -361,7 +558,7 @@ class FedexConection {
      * @param string $purpose
      * @return mixed
      */
-    protected function _doRatesRequest($purpose)
+    protected function _doRatesRequestRate($purpose)
     {
         $ratesRequest = $this->_formRateRequest($purpose);
         $ratesRequestNoShipTimestamp = $ratesRequest;
@@ -381,6 +578,32 @@ class FedexConection {
     }
 
     /**
+     * Makes remote request to the carrier and returns a response
+     *
+     * @param string $purpose
+     * @return mixed
+     */
+    protected function _doRatesRequestShip($purpose)
+    {
+        $ratesRequest = $this->_formShipRequest($purpose);
+        $ratesRequestNoShipTimestamp = $ratesRequest;
+        //unset($ratesRequestNoShipTimestamp['RequestedShipment']['ShipTimestamp']);
+        $requestString = $this->serializer->serialize($ratesRequestNoShipTimestamp);
+        //$response = '';//$this->_getCachedQuotes($requestString);
+        //if ($response === null) {
+            try {
+                $client = $this->_createShipSoapClient();
+                $response = $client->processShipment($ratesRequest);
+                //$this->_setCachedQuotes($requestString, $response);
+            } catch (\Exception $e) {
+                echo print_r(['error' => $e->getMessage(), 'code' => $e->getCode()],true);
+            }
+        //}
+        die(print_r($response,1));
+        return $response;
+    }
+
+    /**
      * Forming request for rate estimation depending to the purpose
      *
      * @param string $purpose
@@ -394,17 +617,35 @@ class FedexConection {
                 'UserCredential' => ['Key' => $r->getKey(), 'Password' => $r->getPassword()],
             ],
             'ClientDetail' => ['AccountNumber' => $r->getAccount(), 'MeterNumber' => $r->getMeterNumber()],
-            'Version' => $this->getVersionInfo(),
+            'Version' => $this->getVersionInfoRate(), 
             'RequestedShipment' => [
                 'DropoffType' => $r->getDropoffType(),
                 'ShipTimestamp' => date('c'),
                 'PackagingType' => $r->getPackaging(),
                 'TotalInsuredValue' => ['Amount' => $r->getValue(), 'Currency' => 'NMP'],
                 'Shipper' => [
-                    'Address' => ['PostalCode' => $r->getOrigPostal(), 'CountryCode' => $r->getOrigCountry()],
+                    'Contact' => [
+                        'PersonName' => $r->getOrigName(), 
+                        'PhoneNumber' => $r->getOrigPhone(),
+                        'EmailAddress' => $r->getOrigEmail()
+                    ],
+                    'Address' => [
+                        'StreetLines' => $r->getOrigStreet(),
+                        'City' => $r->getOrigCity(), 
+                        'StateOrProvinceCode' => $r->getOrigStatecode(), 
+                        'PostalCode' => $r->getOrigPostal(), 
+                        'CountryCode' => $r->getOrigCountry()
+                    ],
                 ],
                 'Recipient' => [
+                    'Contact' => [
+                        'PersonName' => $r->getDestName(), 
+                        'PhoneNumber' => $r->getDestPhone(),
+                        'EmailAddress' => $r->getDestEmail()
+                    ],
                     'Address' => [
+                        'StreetLines' => $r->getDestStreet(),
+                        'StateOrProvinceCode' => $r->getDestStatecode(),
                         'PostalCode' => $r->getDestPostal(),
                         'CountryCode' => $r->getDestCountry(),
                         'Residential' => false,
@@ -448,7 +689,100 @@ class FedexConection {
                 ];
             }
         }
+        //die(print_r($ratesRequest,1));
         return $ratesRequest;
+    }
+
+    /**
+     * Forming request for rate estimation depending to the purpose
+     *
+     * @param string $purpose
+     * @return array
+     */
+    protected function _formShipRequest($purpose)
+    {
+        $r = $this->_rawRequest;
+        $processShipmentRequest = [
+            'WebAuthenticationDetail' => [
+                'UserCredential' => ['Key' => $r->getKey(), 'Password' => $r->getPassword()],
+            ],
+            'ClientDetail' => [
+                'AccountNumber' => $r->getAccount(), 
+                'MeterNumber' => $r->getMeterNumber(),
+                'Localization' => [
+                    'LanguageCode' => 'EN',
+                    'LocaleCode' => 'ES'
+                ]
+            ],
+            'TransactionDetail' => 'Ship_International_basic',
+            'Version' => $this->getVersionInfoShip(), 
+            'RequestedShipment' => [
+                'DropoffType' => $r->getDropoffType(),
+                'ShipTimestamp' => date('c'),
+                'PackagingType' => $r->getPackaging(),
+                'ServiceType' => $r->getServiceType(),
+                'Shipper' => [
+                    'Contact' => [
+                        'PersonName' => $r->getOrigName(), 
+                        'PhoneNumber' => $r->getOrigPhone(),
+                        'EmailAddress' => $r->getOrigEmail()
+                    ],
+                    'Address' => [
+                        'StreetLines' => $r->getOrigStreet(),
+                        'City' => $r->getOrigCity(), 
+                        'StateOrProvinceCode' => $r->getOrigStatecode(), 
+                        'PostalCode' => $r->getOrigPostal(), 
+                        'CountryCode' => $r->getOrigCountry()
+                    ],
+                ],
+                'Recipient' => [
+                    'Contact' => [
+                        'PersonName' => $r->getDestName(), 
+                        'PhoneNumber' => $r->getDestPhone(),
+                        'EmailAddress' => $r->getDestEmail()
+                    ],
+                    'Address' => [
+                        'StreetLines' => $r->getDestStreet(),
+                        'StateOrProvinceCode' => $r->getDestStatecode(),
+                        'PostalCode' => $r->getDestPostal(),
+                        'CountryCode' => $r->getDestCountry(),
+                        'Residential' => false,
+                    ],
+                ],
+                'ShippingChargesPayment' => [
+                    'PaymentType' => 'SENDER',
+                    'Payor' => [
+                        'ResponsibleParty' => [
+                            'AccountNumber' => $r->getAccount()
+                        ]
+                    ],
+                ],
+                'LabelSpecification' => [
+                    'LabelFormatType' => 'COMMON2D',
+                    'ImageType' => 'PNG'
+                ],
+                'RateRequestTypes' => 'LIST',
+                'PackageCount' => '1',
+                'RequestedPackageLineItems' => [
+                    'SequenceNumber' => '1',
+                    'Weight' => [
+                        'Units' => 'LB',
+                        'Value' => '40'
+                    ],
+                    'Dimensions' => [
+                        'Length' => '5',
+                        'Width' => '5',
+                        'Height' => '5',
+                        'Units' => 'IN'
+                    ],
+                    'PhysicalPackaging' => 'BAG',
+                    'ItemDescription' => 'Book',
+
+                ],
+            ],
+        ];
+        //die(print_r($processShipmentRequest,1));
+        return $processShipmentRequest;
     }
 
     /**
@@ -456,9 +790,19 @@ class FedexConection {
      *
      * @return array
      */
-    public function getVersionInfo()
+    public function getVersionInfoRate()
     {
         return ['ServiceId' => 'crs', 'Major' => '24', 'Intermediate' => '0', 'Minor' => '0'];
+    }
+
+    /**
+     * Get version of rates request
+     *
+     * @return array
+     */
+    public function getVersionInfoShip()
+    {
+        return ['ServiceId' => 'ship', 'Major' => '23', 'Intermediate' => '0', 'Minor' => '0'];
     }
 
     /**
@@ -569,7 +913,6 @@ class FedexConection {
         }
         return $amount;
     }
-
 
     /**
      * Get configuration data of carrier
@@ -730,14 +1073,13 @@ class FedexConection {
             return $codes[$type][$code];
         }
     }
-
 }
 
 /**
-* Serialize data to JSON, unserialize JSON encoded data
-*
-* @api
-* @since 100.2.0
+ * Serialize data to JSON, unserialize JSON encoded data
+ *
+ * @api
+ * @since 100.2.0
 */
 class Json
 {
