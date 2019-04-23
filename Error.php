@@ -18,4 +18,20 @@ class Errorr extends AbstractResult
         }
         return $this->getData('error_message');
     }
+
+    /**
+     * @return array
+     */
+    public function getAllData()
+    {
+        return $this->_data;
+    }
+
+    /**
+     * @return \Magento\Framework\Phrase
+     */
+    public function getErrorMessageTraking()
+    {
+        return 'Tracking information is unavailable.';
+    }
 }

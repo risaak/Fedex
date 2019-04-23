@@ -1,7 +1,9 @@
 <?php
 
 require_once('RateResult.php');
+require_once('TrakingResult.php');
 require_once('Error.php');
+require_once('Status.php');
 require_once('Method.php');
 require_once('DataObject.php');
 
@@ -57,6 +59,12 @@ class FedexConection {
     const RATE_REQUEST_SMARTPOST = 'SMART_POST';
 
     /**
+     * List of TrackReply errors
+     * @var array
+     */
+    private static $trackingErrors = ['FAILURE', 'ERROR'];
+
+    /**
      * @var Json
      */
     private $serializer;
@@ -95,6 +103,13 @@ class FedexConection {
     ];
 
     /**
+     * Rate result data
+     *
+     * @var Result|null
+     */
+    protected $_result = null;
+
+    /**
      * @var boolean
      */
     private $debug;
@@ -120,6 +135,7 @@ class FedexConection {
     {
         $client = $this->soapClientFactory->create($wsdl, ['trace' => $trace]);
         $client->__setLocation(
+            //Agregar url de producción en el string vacio
             $this->debug ? 'https://wsbeta.fedex.com:443/web-services': ''
         );
         return $client;
@@ -161,6 +177,7 @@ class FedexConection {
      */
     protected function getFedexAccount()
     {
+        //Agregar cuenta de producción en el string vacio
         return $this->debug ? '510087860': '';
     }
 
@@ -171,6 +188,7 @@ class FedexConection {
      */
     protected function getMeterNumber()
     {
+        //Agregar meter number de producción en el string vacio
         return $this->debug ? '119128331': '';
     }
 
@@ -181,6 +199,7 @@ class FedexConection {
      */
     protected function getKey()
     {
+        //Agregar key de producción en el string vacio
         return $this->debug ? 'tDWROedxHEzLvd4E': '';
     }
 
@@ -191,6 +210,7 @@ class FedexConection {
      */
     protected function getPassword()
     {
+        //Agregar password de producción en el string vacio
         return $this->debug ? 'O14MYlDz9bx4UlmKrHj85XlUx': '';
     }
 
@@ -232,24 +252,12 @@ class FedexConection {
     }
 
     /**
-     * Collect and get rates
+     * Create and get label
      *
      * @param $request
      * @return Result|bool|null
      */
-    public function collectTrack($request)
-    {
-        $this->setRequestRate($request);
-        return $this->getResult();
-    }
-
-    /**
-     * Collect and get rates
-     *
-     * @param $request
-     * @return Result|bool|null
-     */
-    public function collectShip($request)
+    public function createShip($request)
     {
         $req = new DataObject($request);
         return $this->_doShipmentRequest($req);
@@ -264,72 +272,6 @@ class FedexConection {
      * @SuppressWarnings(PHPMD.NPathComplexity)
      */
     public function setRequestRate($request)
-    {
-        $this->_request = $request;
-        $r = new DataObject();
-
-        $r->setAccount($this->getFedexAccount());
-        if (array_key_exists('dropoff',$request)) {
-            $dropoff = $request['dropoff'];
-        } else {
-            $dropoff = $request['dropoff']['REGULARPICKUP'];
-        }
-        $r->setDropoffType($dropoff);
-        if (array_key_exists('packaging',$request)) {
-            $packaging = $request['packaging'];
-        } else {
-            $packaging = $code['packaging']['YOURPACKAGING'];
-        }
-        $r->setPackaging($packaging);
-
-        // iso2_code
-        $r->setOrigName($request['origin_name']);
-        $r->setOrigPhone($request['origin_phone']);
-        $r->setOrigEmail($request['origin_email']);
-        $r->setOrigStreet($request['origin_street']);
-        $r->setOrigCity($request['origin_city']);
-        $r->setOrigStatecode($request['origin_state_code']);
-        $r->setOrigCountry($request['origin_country']);
-        $r->setOrigPostal($request['origin_postcode']);
-
-        // iso2_code
-        $r->setDestName($request['dest_name']);
-        $r->setDestPhone($request['dest_phone']);
-        $r->setDestEmail($request['dest_email']);
-        $r->setDestStreet($request['dest_street']);
-        $r->setDestStatecode($request['dest_state_code']);
-        $r->setDestCountry($request['dest_country']);
-        $r->setDestPostal($request['dest_postcode']);
-        $r->setDestCity($request['dest_city']);
-
-        $r->setWeight($request['weight']);
-        //$r->freeMethodWeight = $request['free_method_weight'];
-        $r->setValue($request['value']);
-        $r->setMeterNumber($this->getMeterNumber());
-        $r->setKey($this->getKey());
-        $r->setPassword($this->getPassword());
-        if (array_key_exists('isReturn',$request)) {
-            $r->setIsReturn($request['isReturn']);
-        }
-        if (array_key_exists('smartpost_hubid',$request)) {
-            $r->setHubid($request['smartpost_hubid']);
-        }
-        //$r->setCurrency($request['currency']);
-
-        $this->setRawRequest($r);
-
-        return $this;
-    }
-
-    /**
-     * Prepare and set request to this instance
-     *
-     * @param Array $request
-     * @return $this
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     * @SuppressWarnings(PHPMD.NPathComplexity)
-     */
-    public function setRequestTrack($request)
     {
         $this->_request = $request;
         $r = new DataObject();
@@ -456,7 +398,7 @@ class FedexConection {
             ],
             'ClientDetail' => ['AccountNumber' => $r->getAccount(), 'MeterNumber' => $r->getMeterNumber()],
             'Version' => $this->getVersionInfoRate(), 
-            'RequestedShipment' => [
+            'RequestedShipment' => [//InsuredValue,
                 'DropoffType' => $r->getDropoffType(),
                 'ShipTimestamp' => date('c'),
                 'PackagingType' => $r->getPackaging(),
@@ -491,7 +433,11 @@ class FedexConection {
                 ],
                 'ShippingChargesPayment' => [
                     'PaymentType' => 'SENDER',
-                    'Payor' => ['AccountNumber' => $r->getAccount(), 'CountryCode' => $r->getOrigCountry()],
+                    'Payor' => [
+                        'ResponsibleParty' => [
+                            'AccountNumber' => $r->getAccount()
+                        ]
+                    ],
                 ],
                 'CustomsClearanceDetail' => [
                     'CustomsValue' => ['Amount' => $r->getValue(), 'Currency' => 'NMP'],
@@ -552,14 +498,24 @@ class FedexConection {
     }
 
     /**
+     * Get version of rates request
+     *
+     * @return array
+     */
+    public function getVersionInfoTraking()
+    {
+        return ['ServiceId' => 'trck', 'Major' => '16', 'Intermediate' => '0', 'Minor' => '0'];
+    }
+
+    /**
      * Get result of request
      *
      * @return Result|null
      */
     public function getResult()
     {
-        if (!$this->_result) {
-            //$this->_result = $this->_trackFactory->create();
+        if ($this->_result == null) {
+            $this->_result = new TrakingResult();
         }
         return $this->_result;
     }
@@ -575,6 +531,7 @@ class FedexConection {
     {
         $costArr = [];
         $priceArr = [];
+        $currency = '';
         $errorTitle = 'Por alguna razon no podemos entregar la información ene este momento';
         if (is_object($response)) {
             if ($response->HighestSeverity == 'FAILURE' || $response->HighestSeverity == 'ERROR') {
@@ -593,6 +550,7 @@ class FedexConection {
                             $amount = $this->_getRateAmountOriginBased($rate);
                             $costArr[$serviceName] = $amount;
                             $priceArr[$serviceName] = $amount;
+                            $currency = $rate->RatedShipmentDetails[0]->ShipmentRateDetail->TotalNetCharge->Currency; 
                         }
                     }
                     asort($priceArr);
@@ -603,6 +561,7 @@ class FedexConection {
                         $amount = $this->_getRateAmountOriginBased($rate);
                         $costArr[$serviceName] = $amount;
                         $priceArr[$serviceName] = $amount;
+                        $currency = $rate->RatedShipmentDetails[0]->ShipmentRateDetail->TotalNetCharge->Currency; 
                     }
                 }
             }
@@ -624,6 +583,7 @@ class FedexConection {
                 $rate->setMethodTitle($this->getCode('method', $method));
                 $rate->setCost($costArr[$method]);
                 $rate->setPrice($price);
+                $rate->setCurrency($currency);
                 $result->append($rate);
             }
         }
@@ -978,7 +938,7 @@ class FedexConection {
                 'LabelSpecification' => [
                     'LabelFormatType' => 'COMMON2D',
                     'ImageType' => 'PDF',
-                    'LabelStockType' => 'PAPER_8.5X11_TOP_HALF_LABEL',
+                    'LabelStockType' => 'PAPER_8.5X11_TOP_HALF_LABEL',//PAPER_7X4.75
                 ],
                 'RateRequestTypes' => 'LIST',
                 'PackageCount' => 1,
@@ -1048,6 +1008,317 @@ class FedexConection {
             ],
             'Version' => $this->getVersionInfoShip()
         ];
+    }
+
+    /**
+     * Get tracking
+     *
+     * @param string|string[] $trackings
+     * @return Result|null
+     */
+    public function getTracking($trackings)
+    {
+        $this->setTrackingReqeust();
+
+        if (!is_array($trackings)) {
+            $trackings = [$trackings];
+        }
+
+        foreach ($trackings as $tracking) {
+            $this->_getXMLTracking($tracking);
+        }
+
+        return $this->_result;
+    }
+
+    /**
+     * Set tracking request
+     *
+     * @return void
+     */
+    protected function setTrackingReqeust()
+    {
+        $r = new DataObject();
+
+        $r->setAccount($this->getFedexAccount());
+
+        $this->_rawTrackingRequest = $r;
+    }
+
+    /**
+     * Send request for tracking
+     *
+     * @param string[] $tracking
+     * @return void
+     */
+    protected function _getXMLTracking($tracking)
+    {
+        $trackRequest = [
+            'WebAuthenticationDetail' => [
+                'UserCredential' => [
+                    'Key' => $this->getKey(),
+                    'Password' => $this->getPassword(),
+                ],
+            ],
+            'ClientDetail' => [
+                'AccountNumber' => $this->getFedexAccount(),
+                'MeterNumber' => $this->getMeterNumber(),
+            ],
+            'Version' => $this->getVersionInfoTraking(),
+            'SelectionDetails' => [
+                'PackageIdentifier' => ['Type' => 'TRACKING_NUMBER_OR_DOORTAG', 'Value' => $tracking],
+            ],
+            'ProcessingOptions' => 'INCLUDE_DETAILED_SCANS'
+        ];
+        $requestString = $this->serializer->serialize($trackRequest);
+
+        try {
+            $client = $this->_createTrackSoapClient();
+            $response = $client->track($trackRequest);
+        } catch (\Exception $e) {
+            ['error' => $e->getMessage(), 'code' => $e->getCode()];
+        }
+
+        $this->_parseTrackingResponse($tracking, $response);
+    }
+
+    /**
+     * Parse tracking response
+     *
+     * @param string $trackingValue
+     * @param \stdClass $response
+     * @return void
+     */
+    protected function _parseTrackingResponse($trackingValue, $response)
+    {
+        if (!is_object($response) || empty($response->HighestSeverity)) {
+            $this->appendTrackingError($trackingValue, __('Invalid response from carrier'));
+            return;
+        } elseif (in_array($response->HighestSeverity, self::$trackingErrors)) {
+            $this->appendTrackingError($trackingValue, (string) $response->Notifications->Message);
+            return;
+        } elseif (empty($response->CompletedTrackDetails) || empty($response->CompletedTrackDetails->TrackDetails)) {
+            $this->appendTrackingError($trackingValue, __('No available tracking items'));
+            return;
+        }
+
+        $trackInfo = $response->CompletedTrackDetails->TrackDetails;
+
+        // Fedex can return tracking details as single object instead array
+        if (is_object($trackInfo)) {
+            $trackInfo = [$trackInfo];
+        }
+
+        $result = $this->getResult();
+        $carrierTitle = 'Fedex';
+        $counter = 0;
+        foreach ($trackInfo as $item) {
+            $tracking = new Status();
+            $tracking->setCarrier($this->_code);
+            $tracking->setCarrierTitle($carrierTitle);
+            $tracking->setTracking($trackingValue);
+            $tracking->addData($this->processTrackingDetails($item));
+            $result->append($tracking);
+            $counter ++;
+        }
+
+        // no available tracking details
+        if (!$counter) {
+            $this->appendTrackingError(
+                $trackingValue, 'For some reason we can\'t retrieve tracking info right now.'
+            );
+        }
+    }
+
+    /**
+     * Append error message to rate result instance
+     * @param string $trackingValue
+     * @param string $errorMessage
+     */
+    private function appendTrackingError($trackingValue, $errorMessage)
+    {
+        $error = new Error();
+        $error->setCarrier('fedex');
+        $error->setCarrierTitle('Fedex');
+        $error->setTracking($trackingValue);
+        $error->setErrorMessage($errorMessage);
+        $result = $this->getResult();
+        $result->append($error);
+    }
+
+    /**
+     * Parse track details response from Fedex
+     * @param $trackInfo
+     * @return array
+     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
+     * @SuppressWarnings(PHPMD.NPathComplexity)
+     */
+    private function processTrackingDetails($trackInfo)
+    {
+        $result = [
+            'shippeddate' => null,
+            'deliverydate' => null,
+            'deliverytime' => null,
+            'deliverylocation' => null,
+            'weight' => null,
+            'progressdetail' => [],
+        ];
+
+        $datetime = $this->parseDate(!empty($trackInfo->ShipTimestamp) ? $trackInfo->ShipTimestamp : null);
+        if ($datetime) {
+            $result['shippeddate'] = gmdate('Y-m-d', $datetime->getTimestamp());
+        }
+
+        $result['signedby'] = !empty($trackInfo->DeliverySignatureName) ?
+            (string) $trackInfo->DeliverySignatureName :
+            null;
+
+        $result['status'] = (!empty($trackInfo->StatusDetail) && !empty($trackInfo->StatusDetail->Description)) ?
+            (string) $trackInfo->StatusDetail->Description :
+            null;
+        $result['service'] = (!empty($trackInfo->Service) && !empty($trackInfo->Service->Description)) ?
+            (string) $trackInfo->Service->Description :
+            null;
+
+        $datetime = $this->getDeliveryDateTime($trackInfo);
+        if ($datetime) {
+            $result['deliverydate'] = gmdate('Y-m-d', $datetime->getTimestamp());
+            $result['deliverytime'] = gmdate('H:i:s', $datetime->getTimestamp());
+        }
+
+        $address = null;
+        if (!empty($trackInfo->EstimatedDeliveryAddress)) {
+            $address = $trackInfo->EstimatedDeliveryAddress;
+        } elseif (!empty($trackInfo->ActualDeliveryAddress)) {
+            $address = $trackInfo->ActualDeliveryAddress;
+        }
+
+        if (!empty($address)) {
+            $result['deliverylocation'] = $this->getDeliveryAddress($address);
+        }
+
+        if (!empty($trackInfo->PackageWeight)) {
+            $result['weight'] = sprintf(
+                '%s %s',
+                (string) $trackInfo->PackageWeight->Value,
+                (string) $trackInfo->PackageWeight->Units
+            );
+        }
+
+        if (!empty($trackInfo->Events)) {
+            $events = $trackInfo->Events;
+            if (is_object($events)) {
+                $events = [$trackInfo->Events];
+            }
+            $result['progressdetail'] = $this->processTrackDetailsEvents($events);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Parses datetime string from FedEx response.
+     * According to FedEx API, datetime string should be in \DateTime::ATOM format, but
+     * sometimes FedEx returns datetime without timezone and in that case timezone will be set as UTC.
+     *
+     * @param string $timestamp
+     * @return bool|\DateTime
+     */
+    private function parseDate($timestamp)
+    {
+        if ($timestamp === null) {
+            return false;
+        }
+        $formats = [\DateTime::ATOM, 'Y-m-d\TH:i:s'];
+        foreach ($formats as $format) {
+            // set UTC timezone for a case if timestamp does not contain any timezone
+            $utcTimezone = new \DateTimeZone('UTC');
+            $dateTime = \DateTime::createFromFormat($format, $timestamp, $utcTimezone);
+            if ($dateTime !== false) {
+                return $dateTime;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Parse delivery datetime from tracking details
+     * @param \stdClass $trackInfo
+     * @return \Datetime|null
+     */
+    private function getDeliveryDateTime($trackInfo)
+    {
+        $timestamp = null;
+        if (!empty($trackInfo->EstimatedDeliveryTimestamp)) {
+            $timestamp = $trackInfo->EstimatedDeliveryTimestamp;
+        } elseif (!empty($trackInfo->ActualDeliveryTimestamp)) {
+            $timestamp = $trackInfo->ActualDeliveryTimestamp;
+        }
+
+        return $timestamp ? $this->parseDate($timestamp) : null;
+    }
+
+    /**
+     * Get delivery address details in string representation
+     * Return City, State, Country Code
+     *
+     * @param \stdClass $address
+     * @return \Magento\Framework\Phrase|string
+     */
+    private function getDeliveryAddress(\stdClass $address)
+    {
+        $details = [];
+
+        if (!empty($address->City)) {
+            $details[] = (string) $address->City;
+        }
+
+        if (!empty($address->StateOrProvinceCode)) {
+            $details[] = (string) $address->StateOrProvinceCode;
+        }
+
+        if (!empty($address->CountryCode)) {
+            $details[] = (string) $address->CountryCode;
+        }
+
+        return implode(', ', $details);
+    }
+
+    /**
+     * Parse tracking details events from response
+     * Return list of items in such format:
+     * ['activity', 'deliverydate', 'deliverytime', 'deliverylocation']
+     *
+     * @param array $events
+     * @return array
+     */
+    private function processTrackDetailsEvents(array $events)
+    {
+        $result = [];
+        /** @var \stdClass $event */
+        foreach ($events as $event) {
+            $item = [
+                'activity' => (string) $event->EventDescription,
+                'deliverydate' => null,
+                'deliverytime' => null,
+                'deliverylocation' => null
+            ];
+
+            $datetime = $this->parseDate(!empty($event->Timestamp) ? $event->Timestamp : null);
+            if ($datetime) {
+                $item['deliverydate'] = gmdate('Y-m-d', $datetime->getTimestamp());
+                $item['deliverytime'] = gmdate('H:i:s', $datetime->getTimestamp());
+            }
+
+            if (!empty($event->Address)) {
+                $item['deliverylocation'] = $this->getDeliveryAddress($event->Address);
+            }
+
+            $result[] = $item;
+        }
+
+        return $result;
     }
 }
 
