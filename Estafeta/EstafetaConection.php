@@ -1,1317 +1,395 @@
 <?php
 
-require_once('../RateResult.php');
-require_once('../TrakingResult.php');
-require_once('../Error.php');
-require_once('../Status.php');
-require_once('../Method.php');
-require_once('../DataObject.php');
+require_once('DataObject.php');
 
-class FedexConection {
+class EstafetaConection {
 
-    /**
-     * Code of the carrier
-     *
-     * @var string
-     */
-    protected $_code = 'estafeta';
-
-    /**
-     * Rate request data
-     *
-     * @var Array|null
-     */
-    protected $_request = null;
-
-    /**
-     * Path to wsdl file of rate service
-     *
-     * @var string
-     */
     protected $_rateServiceWsdl;
-
-    /**
-     * Path to wsdl file of ship service
-     *
-     * @var string
-     */
     protected $_shipServiceWsdl = null;
-
-    /**
-     * Path to wsdl file of track service
-     *
-     * @var string
-     */
     protected $_trackServiceWsdl;
-
-    /**
-     * Purpose of rate request
-     *
-     * @var string
-     */
-    const RATE_REQUEST_GENERAL = 'general';
-
-    /**
-     * Purpose of rate request
-     *
-     * @var string
-     */
-    const RATE_REQUEST_SMARTPOST = 'SMART_POST';
-
-    /**
-     * List of TrackReply errors
-     * @var array
-     */
-    private static $trackingErrors = ['FAILURE', 'ERROR'];
-
-    /**
-     * @var Json
-     */
+    
     private $serializer;
-
-    /**
-     * @var ClientFactory
-     */
     private $soapClientFactory;
 
-    /**
-     * @var Array
-     */
-    private $allowedMethods;
-
-    /**
-     * Raw rate request data
-     *
-     * @var DataObject|null
-     */
     protected $_rawRequest = null;
-
-    /**
-     * Types of rates, order is important
-     *
-     * @var array
-     */
-    protected $_ratesOrder = [
-        'RATED_ACCOUNT_PACKAGE',
-        'PAYOR_ACCOUNT_PACKAGE',
-        'RATED_ACCOUNT_SHIPMENT',
-        'PAYOR_ACCOUNT_SHIPMENT',
-        'RATED_LIST_PACKAGE',
-        'PAYOR_LIST_PACKAGE',
-        'RATED_LIST_SHIPMENT',
-        'PAYOR_LIST_SHIPMENT',
-    ];
-
-    /**
-     * Rate result data
-     *
-     * @var Result|null
-     */
     protected $_result = null;
 
-    /**
-     * @var boolean
-     */
     private $debug;
 
     public function __construct($debug = false) {
-        $wsdlBasePath = __DIR__ . '/Estafeta/wsdl/';
+        $wsdlBasePath = __DIR__ . '/wsdl/';
+        
         $this->_shipServiceWsdl = $wsdlBasePath . 'ShipService_v23.wsdl';
+        
         if($debug){
+            $this->_rateServiceWsdl = 'http://frecuenciacotizadorqa.estafeta.com/Service.asmx?wsdl';
             $this->_rateServiceWsdl = $wsdlBasePath . 'rate_estafeta_qa.wsdl';
+            $this->_shipServiceWsdl = 'https://labelqa.estafeta.com/EstafetaLabel20/services/EstafetaLabelWS?wsdl';
         }else{
             $this->_rateServiceWsdl = $wsdlBasePath . 'rate_estafeta.wsdl';
+            $this->_trackServiceWsdl = 'https://tracking.estafeta.com/Service.asmx?wsdl';
+            $this->_shipServiceWsdl = 'https://label.estafeta.com/EstafetaLabel20/services/EstafetaLabelWS?wsdl';
         }
-        $this->_trackServiceWsdl = $wsdlBasePath . 'TrackService_v16.wsdl';
+        
         $this->serializer = $serializer = new Json();
         $this->soapClientFactory = new ClientFactory();
         $this->debug = $debug;
     }
 
-    /**
-     * Create soap client with selected wsdl
-     *
-     * @param string $wsdl
-     * @param bool|int $trace
-     * @return \SoapClient
-     */
     protected function _createSoapClient($wsdl, $trace = false)
     {
-        $client = $this->soapClientFactory->create($wsdl, ['trace' => $trace]);
-        $client->__setLocation(
-            //Agregar url de producción en el string vacio
-            $this->debug ? 'http://frecuenciacotizadorqa.estafeta.com/Service.asmx': 'http://frecuenciacotizador.estafeta.com/Service.asmx'
-        );
+        $client = $this->soapClientFactory->create($wsdl);
         return $client;
     }
 
-    /**
-     * Create rate soap client
-     *
-     * @return \SoapClient
-     */
     protected function _createRateSoapClient()
     {
         return $this->_createSoapClient($this->_rateServiceWsdl);
     }
-    /**
-     * Create ship soap client
-     *
-     * @return \SoapClient
-     */
+
     protected function _createShipSoapClient()
     {
         return $this->_createSoapClient($this->_shipServiceWsdl);
     }
 
-    /**
-     * Create track soap client
-     *
-     * @return \SoapClient
-     */
     protected function _createTrackSoapClient()
     {
         return $this->_createSoapClient($this->_trackServiceWsdl);
     }
 
-    /**
-     * Get Estafeta Id
-     *
-     * @return String
-     */
     protected function getEstafetaId()
     {
         //Agregar id de producción en el string vacio
         return $this->debug ? '1': '';
     }
 
-    /**
-     * Get User
-     *
-     * @return String
-     */
+    protected function getEstafetaIdTracking()
+    {
+        //Agregar id de producción en el string vacio
+        return $this->debug ? '25': '';
+    }
+
+    protected function getSuscriberId()
+    {
+        //Agregar id de producción en el string vacio
+        return $this->debug ? '28': '';
+    }
+
     protected function getEstafetaUser()
     {
         //Agregar usuario de producción en el string vacio
         return $this->debug ? 'AdminUser': '';
     }
 
-    /**
-     * Get Password
-     *
-     * @return String
-     */
+    protected function getEstafetaUserTracking()
+    {
+        //Agregar usuario de producción en el string vacio
+        return $this->debug ? 'Usuario1': '';
+    }
+
+    protected function getUserLabel()
+    {
+        //Agregar usuario de producción en el string vacio
+        return $this->debug ? 'prueba1': '';
+    }
+
     protected function getPassword()
     {
         //Agregar password de producción en el string vacio
         return $this->debug ? ',1,B(vVi': '';
     }
 
-    /**
-     * Set Raw Request
-     *
-     * @param DataObject|null $request
-     * @return $this
-     * @api
-     */
+    protected function getPasswordTracking()
+    {
+        //Agregar password de producción en el string vacio
+        return $this->debug ? '1GCvGIu$': '';
+    }
+
+    protected function getPasswordLabel()
+    {
+        //Agregar password de producción en el string vacio
+        return $this->debug ? 'lAbeL_K_11': '';
+    }
+
     public function setRawRequest($request)
     {
         $this->_rawRequest = $request;
         return $this;
     }
 
-    /**
-     * Set AllowedMethod
-     *
-     * @param Array $allowedMethods
-     * @return Void
-     */
-    public function setAllowedMethods($allowedMethods)
-    {
-        $this->allowedMethods = $allowedMethods;
+    public function getTracking($request) {
+        $this->setRequestTracking($request);
+        $response = $this->doRequestTracking();
+        return $this->convertObjectToArray($response);
     }
 
-    /**
-     * Collect and get rates
-     *
-     * @param $request
-     * @return Result|bool|null
-     */
-    public function collectRates($request)
-    {
-        $this->setRequestRate($request);
-        $this->_getQuotes();
-        return $this->getResult();
+    protected function doRequestTracking() {
+        $r = $this->_rawRequest;
+
+        $waylbills = $r->getWayBills();
+        
+        $WaybillRange = new StdClass();
+        $WaybillRange -> initialWaybill = '';
+        $WaybillRange -> finalWaybill = '';
+       
+        $WaybillList = new StdClass();
+        $WaybillList -> waybillType = 'G';
+        $WaybillList -> waybills = $waylbills;
+        
+        $SearchType = new StdClass();
+        $SearchType -> waybillList = $WaybillList;
+        $SearchType -> type = 'L';
+        
+        $HistoryConfiguration = new StdClass;
+        $HistoryConfiguration -> includeHistory = 1;
+        $HistoryConfiguration -> historyType = $r->getHistoryType();
+        
+        $Filter = new StdClass;
+        $Filter -> filterInformation = 0;
+        $Filter -> filterType = $r->getFilterType();
+        
+        $SearchConfiguration = new StdClass();
+        $SearchConfiguration -> includeDimensions = $r->getDimensions();
+        $SearchConfiguration -> includeWaybillReplaceData =  $r->getWaybillReplaceData();
+        $SearchConfiguration -> includeReturnDocumentData =  $r->getReturnDocumentData();
+        $SearchConfiguration -> includeMultipleServiceData =  $r->getMultipleServiceData();
+        $SearchConfiguration -> includeInternationalData =  $r->getInternationalData();
+        $SearchConfiguration -> includeSignature =  $r->getSignature();
+        $SearchConfiguration -> includeCustomerInfo =  $r->getCustomerInfo();
+        $SearchConfiguration -> historyConfiguration = $HistoryConfiguration;
+        $SearchConfiguration -> filterType= $Filter;
+        
+        $client = $this->_createTrackSoapClient();
+
+        $result = $client->ExecuteQuery(array(
+            'suscriberId'=>25,
+            'login'=>'Usuario1',
+            'password'=> '1GCvGIu$',
+            'searchType' => $SearchType,
+            'searchConfiguration' => $SearchConfiguration
+            )
+        );
+
+        return $result;
     }
 
-    /**
-     * Create and get label
-     *
-     * @param $request
-     * @return Result|bool|null
-     */
-    public function createShip($request)
-    {
-        $req = new DataObject($request);
-        return $this->_doShipmentRequest($req);
-    }
-
-    /**
-     * Prepare and set request to this instance
-     *
-     * @param Array $request
-     * @return $this
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     * @SuppressWarnings(PHPMD.NPathComplexity)
-     */
-    public function setRequestRate($request)
-    {
-        $this->_request = $request;
+    public function setRequestTracking($request) {
         $r = new DataObject();
 
-        $r->setAccount($this->getFedexAccount());
-        if (array_key_exists('dropoff',$request)) {
-            $dropoff = $request['dropoff'];
-        } else {
-            $dropoff = $request['dropoff']['REGULARPICKUP'];
-        }
-        $r->setDropoffType($dropoff);
-        if (array_key_exists('packaging',$request)) {
-            $packaging = $request['packaging'];
-        } else {
-            $packaging = $code['packaging']['YOURPACKAGING'];
-        }
-        $r->setPackaging($packaging);
-
-        // iso2_code
-        $r->setOrigName($request['origin_name']);
-        $r->setOrigPhone($request['origin_phone']);
-        $r->setOrigEmail($request['origin_email']);
-        $r->setOrigStreet($request['origin_street']);
-        $r->setOrigCity($request['origin_city']);
-        $r->setOrigStatecode($request['origin_state_code']);
-        $r->setOrigCountry($request['origin_country']);
-        $r->setOrigPostal($request['origin_postcode']);
-
-        // iso2_code
-        $r->setDestName($request['dest_name']);
-        $r->setDestPhone($request['dest_phone']);
-        $r->setDestEmail($request['dest_email']);
-        $r->setDestStreet($request['dest_street']);
-        $r->setDestStatecode($request['dest_state_code']);
-        $r->setDestCountry($request['dest_country']);
-        $r->setDestPostal($request['dest_postcode']);
-        $r->setDestCity($request['dest_city']);
-
-        $r->setWeight($request['weight']);
-        //$r->freeMethodWeight = $request['free_method_weight'];
-        $r->setValue($request['value']);
-        $r->setMeterNumber($this->getMeterNumber());
-        $r->setKey($this->getKey());
-        $r->setPassword($this->getPassword());
-        if (array_key_exists('isReturn',$request)) {
-            $r->setIsReturn($request['isReturn']);
-        }
-        if (array_key_exists('smartpost_hubid',$request)) {
-            $r->setHubid($request['smartpost_hubid']);
-        }
-        //$r->setCurrency($request['currency']);
+        $r->setWayBills($request['waybills']);
+        $r->setFilterType($request['filterType']);
+        $r->setHistoryType($request['historyType']);
+        $r->setDimensions($request['dimensions']);
+        $r->setWaybillReplaceData($request['waybillReplaceData']);
+        $r->setReturnDocumentData($request['returnDocumentData']);
+        $r->setMultipleServiceData($request['multipleServiceData']);
+        $r->setInternationalData($request['internationalData']);
+        $r->setSignature($request['signature']);
+        $r->setCustomerInfo($request['customerInfo']);
 
         $this->setRawRequest($r);
 
         return $this;
     }
 
-    /** 
-      * Do remote request for and handle errors
-      *
-      * @return Result
-    */
-    protected function _getQuotes()
-    {
-        $this->_result = new RateResult();
-        // make separate request for Smart Post method
-        $allowedMethods = $this->allowedMethods;
-        if (in_array(self::RATE_REQUEST_SMARTPOST, $allowedMethods)) {
-            $response = $this->_doRatesRequestRate(self::RATE_REQUEST_SMARTPOST);
-            $preparedSmartpost = $this->_prepareRateResponse($response);
-            if (!$preparedSmartpost->getError()) {
-                $this->_result->append($preparedSmartpost);
-            }
-        }
-        // make general request for all methods
-        $response = $this->_doRatesRequestRate(self::RATE_REQUEST_GENERAL);
-        $preparedGeneral = $this->_prepareRateResponse($response);
-        if (!$preparedGeneral->getError()
-            || $this->_result->getError() && $preparedGeneral->getError()
-            || empty($this->_result->getAllRates())
-        ) {
-            $this->_result->append($preparedGeneral);
-        }
-        return $this->_result;
+    public function getRates($request) {
+        $this->setRequestRate($request);
+        $response = $this->_doRatesRequestRate();
+        return $this->convertObjectToArray($response);
     }
 
-    /**
-     * Makes remote request to the carrier and returns a response
-     *
-     * @param string $purpose
-     * @return mixed
-     */
-    protected function _doRatesRequestRate($purpose)
+    public function setRequestRate($request) {
+        $r = new DataObject();
+
+        $r->setfrecuencia($request['frecuencia']);
+        $r->setPaquete($request['paquete']);
+        $r->setLargo($request['largo']);
+        $r->setPeso($request['peso']);
+        $r->setAlto($request['alto']);
+        $r->setAncho($request['ancho']);
+        $r->setCpOrigen($request['cpOrigen']);
+        $r->setCpDestino($request['cpDestino']);
+
+        $this->setRawRequest($r);
+
+        return $this;
+    }
+
+    protected function _doRatesRequestRate()
     {
-        $ratesRequest = $this->_formRateRequest($purpose);
-        $ratesRequestNoShipTimestamp = $ratesRequest;
-        unset($ratesRequestNoShipTimestamp['RequestedShipment']['ShipTimestamp']);
-        $requestString = $this->serializer->serialize($ratesRequestNoShipTimestamp);
-        //$response = $this->_getCachedQuotes($requestString);
-        //if ($response === null) {
-            try {
-                $client = $this->_createRateSoapClient();
-                $response = $client->getRates($ratesRequest);
-                //$this->_setCachedQuotes($requestString, $response);
-            } catch (\Exception $e) {
-                echo print_r(['error' => $e->getMessage(), 'code' => $e->getCode()],true);
-            }
-        //}
+        $ratesRequest = $this->_formRateRequest();
+        try {
+            $client = $this->_createRateSoapClient();
+            $response = $client->FrecuenciaCotizador($ratesRequest);
+        } catch (\Exception $e) {
+            echo print_r(['error' => $e->getMessage(), 'code' => $e->getCode()],true);
+        }
         return $response;
     }
 
-    /**
-     * Forming request for rate estimation depending to the purpose
-     *
-     * @param string $purpose
-     * @return array
-     */
-    protected function _formRateRequest($purpose)
+    protected function _formRateRequest()
     {
         $r = $this->_rawRequest;
         $ratesRequest = [
-            'WebAuthenticationDetail' => [
-                'UserCredential' => ['Key' => $r->getKey(), 'Password' => $r->getPassword()],
+            'idusuario' => $this->getEstafetaId(),
+            'usuario' => $this->getEstafetaUser(), 
+            'contra' => $this->getPassword(),
+            'esFrecuencia' => $r->getfrecuencia(),
+            'esLista' => 'true',
+            'tipoEnvio' => [
+                'EsPaquete' =>  $r->getPaquete(),
+                'Largo' => $r->getLargo(), 
+                'Peso' =>  $r->getPeso(), 
+                'Alto' =>  $r->getAlto(), 
+                'Ancho' =>  $r->getAncho()
             ],
-            'ClientDetail' => ['AccountNumber' => $r->getAccount(), 'MeterNumber' => $r->getMeterNumber()],
-            'Version' => $this->getVersionInfoRate(), 
-            'RequestedShipment' => [//InsuredValue,
-                'DropoffType' => $r->getDropoffType(),
-                'ShipTimestamp' => date('c'),
-                'PackagingType' => $r->getPackaging(),
-                'TotalInsuredValue' => ['Amount' => $r->getValue(), 'Currency' => 'NMP'],
-                'Shipper' => [
-                    'Contact' => [
-                        'PersonName' => $r->getOrigName(), 
-                        'PhoneNumber' => $r->getOrigPhone(),
-                        'EmailAddress' => $r->getOrigEmail()
-                    ],
-                    'Address' => [
-                        'StreetLines' => $r->getOrigStreet(),
-                        'City' => $r->getOrigCity(), 
-                        'StateOrProvinceCode' => $r->getOrigStatecode(), 
-                        'PostalCode' => $r->getOrigPostal(), 
-                        'CountryCode' => $r->getOrigCountry()
-                    ],
-                ],
-                'Recipient' => [
-                    'Contact' => [
-                        'PersonName' => $r->getDestName(), 
-                        'PhoneNumber' => $r->getDestPhone(),
-                        'EmailAddress' => $r->getDestEmail()
-                    ],
-                    'Address' => [
-                        'StreetLines' => $r->getDestStreet(),
-                        'StateOrProvinceCode' => $r->getDestStatecode(),
-                        'PostalCode' => $r->getDestPostal(),
-                        'CountryCode' => $r->getDestCountry(),
-                        'Residential' => false,
-                    ],
-                ],
-                'ShippingChargesPayment' => [
-                    'PaymentType' => 'SENDER',
-                    'Payor' => [
-                        'ResponsibleParty' => [
-                            'AccountNumber' => $r->getAccount()
-                        ]
-                    ],
-                ],
-                'CustomsClearanceDetail' => [
-                    'CustomsValue' => ['Amount' => $r->getValue(), 'Currency' => 'NMP'],
-                ],
-                'RateRequestTypes' => 'LIST',
-                'PackageCount' => '1',
-                'PackageDetail' => 'INDIVIDUAL_PACKAGES',
-                'RequestedPackageLineItems' => [
-                    '0' => [
-                        'Weight' => [
-                            'Value' => (double)$r->getWeight(),
-                            'Units' => 'KG',
-                        ],
-                        'GroupPackageCount' => 1,
-                    ],
-                ],
-            ],
+            'datosOrigen' =>  $r->getCpOrigen(),
+            'datosDestino' =>  $r->getCpDestino(),
         ];
-        if ($r->getDestCity()) {
-            $ratesRequest['RequestedShipment']['Recipient']['Address']['City'] = $r->getDestCity();
-        }
-        if ($purpose == self::RATE_REQUEST_GENERAL) {
-            $ratesRequest['RequestedShipment']['RequestedPackageLineItems'][0]['InsuredValue'] = [
-                'Amount' => $r->getValue(),
-                'Currency' => 'NMP',
-            ];
-        } else {
-            if ($purpose == self::RATE_REQUEST_SMARTPOST) {
-                $ratesRequest['RequestedShipment']['ServiceType'] = self::RATE_REQUEST_SMARTPOST;
-                $ratesRequest['RequestedShipment']['SmartPostDetail'] = [
-                    'Indicia' => (double)$r->getWeight() >= 1 ? 'PARCEL_SELECT' : 'PRESORTED_STANDARD',
-                    'HubId' => $r->getHubid(),
-                ];
-            }
-        }
-        //die(print_r($ratesRequest,1));
         return $ratesRequest;
     }
 
-    /**
-     * Get version of rates request
-     *
-     * @return array
-     */
-    public function getVersionInfoRate()
-    {
-        return ['ServiceId' => 'crs', 'Major' => '24', 'Intermediate' => '0', 'Minor' => '0'];
+    public function getLabel($request) {
+        $this->setRequestLabel($request);
+        $response = $this->_doRatesRequestLabel();
+        return $this->convertObjectToArray($response);
     }
 
-    /**
-     * Get version of rates request
-     *
-     * @return array
-     */
-    public function getVersionInfoShip()
-    {
-        return ['ServiceId' => 'ship', 'Major' => '23', 'Intermediate' => '0', 'Minor' => '0'];
-    }
-
-    /**
-     * Get version of rates request
-     *
-     * @return array
-     */
-    public function getVersionInfoTraking()
-    {
-        return ['ServiceId' => 'trck', 'Major' => '16', 'Intermediate' => '0', 'Minor' => '0'];
-    }
-
-    /**
-     * Get result of request
-     *
-     * @return Result|null
-     */
-    public function getResult()
-    {
-        if ($this->_result == null) {
-            $this->_result = new TrakingResult();
-        }
-        return $this->_result;
-    }
-
-    /**
-     * Prepare shipping rate result based on response
-     *
-     * @param mixed $response
-     * @return Result
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     */
-    protected function _prepareRateResponse($response)
-    {
-        $costArr = [];
-        $priceArr = [];
-        $currency = '';
-        $errorTitle = 'Por alguna razon no podemos entregar la información ene este momento';
-        if (is_object($response)) {
-            if ($response->HighestSeverity == 'FAILURE' || $response->HighestSeverity == 'ERROR') {
-                if (is_array($response->Notifications)) {
-                    $notification = array_pop($response->Notifications);
-                    $errorTitle = (string)$notification->Message;
-                } else {
-                    $errorTitle = (string)$response->Notifications->Message;
-                }
-            } elseif (isset($response->RateReplyDetails)) {
-                $allowedMethods = $this->allowedMethods;
-                if (is_array($response->RateReplyDetails)) {
-                    foreach ($response->RateReplyDetails as $rate) {
-                        $serviceName = (string)$rate->ServiceType;
-                        if (in_array($serviceName, $allowedMethods)) {
-                            $amount = $this->_getRateAmountOriginBased($rate);
-                            $costArr[$serviceName] = $amount;
-                            $priceArr[$serviceName] = $amount;
-                            $currency = $rate->RatedShipmentDetails[0]->ShipmentRateDetail->TotalNetCharge->Currency; 
-                        }
-                    }
-                    asort($priceArr);
-                } else {
-                    $rate = $response->RateReplyDetails;
-                    $serviceName = (string)$rate->ServiceType;
-                    if (in_array($serviceName, $allowedMethods)) {
-                        $amount = $this->_getRateAmountOriginBased($rate);
-                        $costArr[$serviceName] = $amount;
-                        $priceArr[$serviceName] = $amount;
-                        $currency = $rate->RatedShipmentDetails[0]->ShipmentRateDetail->TotalNetCharge->Currency; 
-                    }
-                }
-            }
-        }
-        $result = new RateResult();
-        if (empty($priceArr)) {
-            $error = new Errorr();
-            $error->setCarrier($this->_code);
-            $error->setCarrierTitle('Fedex');
-            $error->setErrorMessage($errorTitle);
-            $error->setErrorMessage('Este método no esta habilitado. Para utilizar este método por favor ponte en contacto con nosotros.');
-            $result->append($error);
-        } else {
-            foreach ($priceArr as $method => $price) {
-                $rate = new Method();
-                $rate->setCarrier($this->_code);
-                $rate->setCarrierTitle('Fedex');
-                $rate->setMethod($method);
-                $rate->setMethodTitle($this->getCode('method', $method));
-                $rate->setCost($costArr[$method]);
-                $rate->setPrice($price);
-                $rate->setCurrency($currency);
-                $result->append($rate);
-            }
-        }
-        return $result;
-    }
-
-    /**
-     * Get origin based amount form response of rate estimation
-     *
-     * @param \stdClass $rate
-     * @return null|float
-     */
-    protected function _getRateAmountOriginBased($rate)
-    {
-        $amount = null;
-        $rateTypeAmounts = [];
-        if (is_object($rate)) {
-            // The "RATED..." rates are expressed in the currency of the origin country
-            foreach ($rate->RatedShipmentDetails as $ratedShipmentDetail) {
-                $netAmount = (string)$ratedShipmentDetail->ShipmentRateDetail->TotalNetCharge->Amount;
-                $rateType = (string)$ratedShipmentDetail->ShipmentRateDetail->RateType;
-                $rateTypeAmounts[$rateType] = $netAmount;
-            }
-            foreach ($this->_ratesOrder as $rateType) {
-                if (!empty($rateTypeAmounts[$rateType])) {
-                    $amount = $rateTypeAmounts[$rateType];
-                    break;
-                }
-            }
-            if ($amount === null) {
-                $amount = (string)$rate->RatedShipmentDetails[0]->ShipmentRateDetail->TotalNetCharge->Amount;
-            }
-        }
-        return $amount;
-    }
-
-    /**
-     * Get configuration data of carrier
-     *
-     * @param string $type
-     * @param string $code
-     * @return array|false
-     * @SuppressWarnings(PHPMD.ExcessiveMethodLength)
-     */
-    public function getCode($type, $code = '')
-    {
-        $codes = [
-            'method' => [
-                'EUROPE_FIRST_INTERNATIONAL_PRIORITY' => 'Europe First Priority',
-                'FEDEX_1_DAY_FREIGHT' => '1 Day Freight',
-                'FEDEX_2_DAY_FREIGHT' => '2 Day Freight',
-                'FEDEX_2_DAY' => '2 Day',
-                'FEDEX_2_DAY_AM' => '2 Day AM',
-                'FEDEX_3_DAY_FREIGHT' => '3 Day Freight',
-                'FEDEX_EXPRESS_SAVER' => 'Express Saver',
-                'FEDEX_GROUND' => 'Ground',
-                'FIRST_OVERNIGHT' => 'First Overnight',
-                'GROUND_HOME_DELIVERY' => 'Home Delivery',
-                'INTERNATIONAL_ECONOMY' => 'International Economy',
-                'INTERNATIONAL_ECONOMY_FREIGHT' => 'Intl Economy Freight',
-                'INTERNATIONAL_FIRST' => 'International First',
-                'INTERNATIONAL_GROUND' => 'International Ground',
-                'INTERNATIONAL_PRIORITY' => 'International Priority',
-                'INTERNATIONAL_PRIORITY_FREIGHT' => 'Intl Priority Freight',
-                'PRIORITY_OVERNIGHT' => 'Priority Overnight',
-                'SMART_POST' => 'Smart Post',
-                'STANDARD_OVERNIGHT' => 'Standard Overnight',
-                'FEDEX_FREIGHT' => 'Freight',
-                'FEDEX_NATIONAL_FREIGHT' => 'National Freight',
-            ],
-            'dropoff' => [
-                'REGULAR_PICKUP' => 'Regular Pickup',
-                'REQUEST_COURIER' => 'Request Courier',
-                'DROP_BOX' => 'Drop Box',
-                'BUSINESS_SERVICE_CENTER' => 'Business Service Center',
-                'STATION' => 'Station',
-            ],
-            'packaging' => [
-                'FEDEX_ENVELOPE' => 'FedEx Envelope',
-                'FEDEX_PAK' => 'FedEx Pak',
-                'FEDEX_BOX' => 'FedEx Box',
-                'FEDEX_TUBE' => 'FedEx Tube',
-                'FEDEX_10KG_BOX' => 'FedEx 10kg Box',
-                'FEDEX_25KG_BOX' => 'FedEx 25kg Box',
-                'YOUR_PACKAGING' => 'Your Packaging',
-            ],
-            'containers_filter' => [
-                [
-                    'containers' => ['FEDEX_ENVELOPE', 'FEDEX_PAK'],
-                    'filters' => [
-                        'within_us' => [
-                            'method' => [
-                                'FEDEX_EXPRESS_SAVER',
-                                'FEDEX_2_DAY',
-                                'FEDEX_2_DAY_AM',
-                                'STANDARD_OVERNIGHT',
-                                'PRIORITY_OVERNIGHT',
-                                'FIRST_OVERNIGHT',
-                            ],
-                        ],
-                        'from_us' => [
-                            'method' => ['INTERNATIONAL_FIRST', 'INTERNATIONAL_ECONOMY', 'INTERNATIONAL_PRIORITY'],
-                        ],
-                    ],
-                ],
-                [
-                    'containers' => ['FEDEX_BOX', 'FEDEX_TUBE'],
-                    'filters' => [
-                        'within_us' => [
-                            'method' => [
-                                'FEDEX_2_DAY',
-                                'FEDEX_2_DAY_AM',
-                                'STANDARD_OVERNIGHT',
-                                'PRIORITY_OVERNIGHT',
-                                'FIRST_OVERNIGHT',
-                                'FEDEX_FREIGHT',
-                                'FEDEX_1_DAY_FREIGHT',
-                                'FEDEX_2_DAY_FREIGHT',
-                                'FEDEX_3_DAY_FREIGHT',
-                                'FEDEX_NATIONAL_FREIGHT',
-                            ],
-                        ],
-                        'from_us' => [
-                            'method' => ['INTERNATIONAL_FIRST', 'INTERNATIONAL_ECONOMY', 'INTERNATIONAL_PRIORITY'],
-                        ],
-                    ],
-                ],
-                [
-                    'containers' => ['FEDEX_10KG_BOX', 'FEDEX_25KG_BOX'],
-                    'filters' => [
-                        'within_us' => [],
-                        'from_us' => ['method' => ['INTERNATIONAL_PRIORITY']],
-                    ],
-                ],
-                [
-                    'containers' => ['YOUR_PACKAGING'],
-                    'filters' => [
-                        'within_us' => [
-                            'method' => [
-                                'FEDEX_GROUND',
-                                'GROUND_HOME_DELIVERY',
-                                'SMART_POST',
-                                'FEDEX_EXPRESS_SAVER',
-                                'FEDEX_2_DAY',
-                                'FEDEX_2_DAY_AM',
-                                'STANDARD_OVERNIGHT',
-                                'PRIORITY_OVERNIGHT',
-                                'FIRST_OVERNIGHT',
-                                'FEDEX_FREIGHT',
-                                'FEDEX_1_DAY_FREIGHT',
-                                'FEDEX_2_DAY_FREIGHT',
-                                'FEDEX_3_DAY_FREIGHT',
-                                'FEDEX_NATIONAL_FREIGHT',
-                            ],
-                        ],
-                        'from_us' => [
-                            'method' => [
-                                'INTERNATIONAL_FIRST',
-                                'INTERNATIONAL_ECONOMY',
-                                'INTERNATIONAL_PRIORITY',
-                                'INTERNATIONAL_GROUND',
-                                'FEDEX_FREIGHT',
-                                'FEDEX_1_DAY_FREIGHT',
-                                'FEDEX_2_DAY_FREIGHT',
-                                'FEDEX_3_DAY_FREIGHT',
-                                'FEDEX_NATIONAL_FREIGHT',
-                                'INTERNATIONAL_ECONOMY_FREIGHT',
-                                'INTERNATIONAL_PRIORITY_FREIGHT',
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'delivery_confirmation_types' => [
-                'NO_SIGNATURE_REQUIRED' => 'Not Required',
-                'ADULT' => 'Adult',
-                'DIRECT' => 'Direct',
-                'INDIRECT' => 'Indirect',
-            ],
-            'unit_of_measure' => [
-                'LB' => 'Pounds',
-                'KG' => 'Kilograms',
-            ],
-        ];
-        if (!isset($codes[$type])) {
-            return false;
-        } elseif ('' === $code) {
-            return $codes[$type];
-        }
-        if (!isset($codes[$type][$code])) {
-            return false;
-        } else {
-            return $codes[$type][$code];
-        }
-    }
-
-    /**
-     * Do shipment request to carrier web service, obtain Print Shipping Labels and process errors in response
-     *
-     * @param DataObject $request
-     * @return DataObject
-     */
-    protected function _doShipmentRequest(DataObject $request)
-    {
-        $this->_prepareShipmentRequest($request);
-        $result = new DataObject();
-        $client = $this->_createShipSoapClient();
-        $requestClient = $this->_formShipmentRequest($request);
-        
-        $response = $client->processShipment($requestClient);
-    
-
-        if ($response->HighestSeverity != 'FAILURE' && $response->HighestSeverity != 'ERROR') {
-            $shippingLabelContent = $response->CompletedShipmentDetail->CompletedPackageDetails->Label->Parts->Image;
-            $trackingNumber = $this->getTrackingNumber(
-                $response->CompletedShipmentDetail->CompletedPackageDetails->TrackingIds
-            );
-            $result->setShippingLabelContent($shippingLabelContent);
-            $result->setTrackingNumber($trackingNumber);
-        } else {
-            $error = [];
-            if (is_array($response->Notifications)) {
-                foreach ($response->Notifications as $notification) {
-                    $error['result']['code'] .= $notification->Code . '; ';
-                    $error['result']['error'] .= $notification->Message . '; ';
-                }
-            } else {
-                $error['result']['code'] = $response->Notifications->Code . ' ';
-                $error['result']['error'] = $response->Notifications->Message . ' ';
-            }
-            $result->setErrors($error);
-        }
-        $result->setGatewayResponse($client->__getLastResponse());
-
-        return $result;
-    }
-
-    /**
-     * Prepare shipment request.
-     * Validate and correct request information
-     *
-     * @param DataObject $request
-     * @return void
-     */
-    protected function _prepareShipmentRequest(DataObject $request)
-    {
-        $phonePattern = '/[\s\_\-\(\)]+/';
-        $phoneNumber = $request->getShipperContactPhoneNumber();
-        $phoneNumber = preg_replace($phonePattern, '', $phoneNumber);
-        $request->setShipperContactPhoneNumber($phoneNumber);
-        $phoneNumber = $request->getRecipientContactPhoneNumber();
-        $phoneNumber = preg_replace($phonePattern, '', $phoneNumber);
-        $request->setRecipientContactPhoneNumber($phoneNumber);
-    }
-
-    /**
-     * @param array|object $trackingIds
-     * @return string
-     */
-    private function getTrackingNumber($trackingIds)
-    {
-        return is_array($trackingIds) ? array_map(
-            function ($val) {
-                return $val->TrackingNumber;
-            },
-            $trackingIds
-        ) : $trackingIds->TrackingNumber;
-    }
-
-    /**
-     * Form array with appropriate structure for shipment request
-     *
-     * @param DataObject $request
-     * @return array
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     * @SuppressWarnings(PHPMD.NPathComplexity)
-     * @SuppressWarnings(PHPMD.ExcessiveMethodLength)
-     */
-    protected function _formShipmentRequest(DataObject $request)
-    {
-        if ($request->getReferenceData()) {
-            $referenceData = $request->getReferenceData();
-        } else {
-            $referenceData = '';
-        }
-        $packageParams = new DataObject($request->getPackageParams());
-        $customsValue = $packageParams->getCustomsValue();
-        $height = $packageParams->getHeight();
-        $width = $packageParams->getWidth();
-        $length = $packageParams->getLength();
-        $weightUnits = 'KG';
-        $unitPrice = 0;
-        $itemsQty = 0;
-        $itemsDesc = [];
-        $productIds = [];
-        $packageItems = $request->getPackageItems();
-        foreach ($packageItems as $itemShipment) {
-            $item = new DataObject($itemShipment);
-
-            $unitPrice += $item->getPrice();
-            $itemsQty += $item->getQty();
-
-            $itemsDesc[] = $item->getName();
-            $productIds[] = $item->getId();
-        }
-
-        $optionType = $request->getShippingMethod() == self::RATE_REQUEST_SMARTPOST
-            ? 'SERVICE_DEFAULT' : 'ADULT';
-        $requestClient = [
-            'RequestedShipment' => [
-                'ShipTimestamp' => time(),
-                'DropoffType' => $request->getDropoff(),
-                'PackagingType' => $request->getPackagingType(),
-                'ServiceType' => $request->getShippingMethod(),
-                'Shipper' => [
-                    'Contact' => [
-                        'PersonName' => $request->getShipperContactPersonName(),
-                        'CompanyName' => $request->getShipperContactCompanyName(),
-                        'PhoneNumber' => $request->getShipperContactPhoneNumber(),
-                    ],
-                    'Address' => [
-                        'StreetLines' => [$request->getShipperAddressStreet()],
-                        'City' => $request->getShipperAddressCity(),
-                        'StateOrProvinceCode' => $request->getShipperAddressStateOrProvinceCode(),
-                        'PostalCode' => $request->getShipperAddressPostalCode(),
-                        'CountryCode' => $request->getShipperAddressCountryCode(),
-                    ],
-                ],
-                'Recipient' => [
-                    'Contact' => [
-                        'PersonName' => $request->getRecipientContactPersonName(),
-                        'CompanyName' => $request->getRecipientContactCompanyName(),
-                        'PhoneNumber' => $request->getRecipientContactPhoneNumber(),
-                    ],
-                    'Address' => [
-                        'StreetLines' => [$request->getRecipientAddressStreet()],
-                        'City' => $request->getRecipientAddressCity(),
-                        'StateOrProvinceCode' => $request->getRecipientAddressStateOrProvinceCode(),
-                        'PostalCode' => $request->getRecipientAddressPostalCode(),
-                        'CountryCode' => $request->getRecipientAddressCountryCode(),
-                        'Residential' => false,
-                    ],
-                ],
-                'ShippingChargesPayment' => [
-                    'PaymentType' => 'SENDER',
-                    'Payor' => [
-                        'ResponsibleParty' => [
-                            'AccountNumber' => $this->getFedexAccount()
-                        ]
-                    ],
-                ],
-                'LabelSpecification' => [
-                    'LabelFormatType' => 'COMMON2D',
-                    'ImageType' => 'PDF',
-                    'LabelStockType' => 'PAPER_8.5X11_TOP_HALF_LABEL',//PAPER_7X4.75
-                ],
-                'RateRequestTypes' => 'LIST',
-                'PackageCount' => 1,
-                'RequestedPackageLineItems' => [
-                    'SequenceNumber' => '1',
-                    'Weight' => ['Units' => $weightUnits, 'Value' => $request->getPackageWeight()],
-                    'CustomerReferences' => [
-                        'CustomerReferenceType' => 'CUSTOMER_REFERENCE',
-                        'Value' => $referenceData,
-                    ],
-                    'SpecialServicesRequested' => [
-                        'SpecialServiceTypes' => 'SIGNATURE_OPTION',
-                        'SignatureOptionDetail' => ['OptionType' => $optionType],
-                    ],
-                ],
-            ],
-        ];
-
-        if ($request->getMasterTrackingId()) {
-            $requestClient['RequestedShipment']['MasterTrackingId'] = $request->getMasterTrackingId();
-        }
-
-        if ($request->getShippingMethod() == self::RATE_REQUEST_SMARTPOST) {
-            $requestClient['RequestedShipment']['SmartPostDetail'] = [
-                'Indicia' => (double)$request->getPackageWeight() >= 1 ? 'PARCEL_SELECT' : 'PRESORTED_STANDARD',
-                'HubId' => $request->getData('smartpost_hubid'),
-            ];
-        }
-
-        // set dimensions
-        if ($length || $width || $height) {
-            $requestClient['RequestedShipment']['RequestedPackageLineItems']['Dimensions'] = [
-                'Length' => $length,
-                'Width' => $width,
-                'Height' => $height,
-                'Units' => $packageParams->getDimensionUnits(),
-            ];
-        }
-
-        return $this->_getAuthDetails() + $requestClient;
-    }
-
-    /**
-     * Return array of authenticated information
-     *
-     * @return array
-     */
-    protected function _getAuthDetails()
-    {
-        return [
-            'WebAuthenticationDetail' => [
-                'UserCredential' => [
-                    'Key' => $this->getKey(),
-                    'Password' => $this->getPassword()
-                ]
-            ],
-            'ClientDetail' => [
-                'AccountNumber' => $this->getFedexAccount(),
-                'MeterNumber' => $this->getMeterNumber(),
-                'Localization' => [
-                    'LanguageCode' => 'ES',
-                    'LocaleCode' => 'ES'
-                ]
-            ],
-            'TransactionDetail' => [
-                'CustomerTransactionId' => '*** Express Domestic Shipping Request v9 using PHP ***',
-            ],
-            'Version' => $this->getVersionInfoShip()
-        ];
-    }
-
-    /**
-     * Get tracking
-     *
-     * @param string|string[] $trackings
-     * @return Result|null
-     */
-    public function getTracking($trackings)
-    {
-        $this->setTrackingReqeust();
-
-        if (!is_array($trackings)) {
-            $trackings = [$trackings];
-        }
-
-        foreach ($trackings as $tracking) {
-            $this->_getXMLTracking($tracking);
-        }
-
-        return $this->_result;
-    }
-
-    /**
-     * Set tracking request
-     *
-     * @return void
-     */
-    protected function setTrackingReqeust()
-    {
+    public function setRequestLabel($request) {
         $r = new DataObject();
 
-        $r->setAccount($this->getFedexAccount());
+        $r->setValid($request['valid']);
+        $r->setCustomerNumber($request['customerNumber']);
+        $r->setQuadrant($request['quadrant']);
+        $r->setPaperType($request['paperType']);
+        $r->setLabelDescriptionListCount($request['labelDescriptionListCount']);
+        $r->setAditionalInfo($request['aditionalInfo']);
+        $r->setContent($request['content']);
+        $r->setContentDescription($request['contentDescription']);
+        $r->setCostCenter($request['costCenter']);
+        $r->setDeliveryToEstafetaOffice($request['deliveryToEstafetaOffice']);
+        $r->setDestinationCountryId($request['destinationCountryId']);
+        $r->setDestinationAddress1($request['destination_address1']);
+        $r->setDestinationAddress2($request['destination_address2']);
+        $r->setDestinationCellPhone($request['destination_cellPhone']);
+        $r->setDestinationCity($request['destination_city']);
+        $r->setDestinationContactName($request['destination_contactName']);
+        $r->setDestinationCorporateName($request['destination_corporateName']);
+        $r->setDestinationCustomerNumber($request['destination_customerNumber']);
+        $r->setDestinationNeighborhood($request['destination_neighborhood']);
+        $r->setDestinationPhoneNumber($request['destination_phoneNumber']);
+        $r->setDestinationState($request['destination_state']);
+        $r->setDestinationZipCode($request['destination_zipCode']);
+        $r->setNumberOfLabels($request['numberOfLabels']);
+        $r->setOfficeNum($request['officeNum']);
+        $r->setOriginAddress1($request['origin_address1']);
+        $r->setOriginAddress2($request['origin_address2']);
+        $r->setOriginCellPhone($request['origin_cellPhone']);
+        $r->setOriginCity($request['origin_city']);
+        $r->setOriginContactName($request['origin_contactName']);
+        $r->setOriginCorporateName($request['origin_corporateName']);
+        $r->setOriginCustomerNumber($request['origin_customerNumber']);
+        $r->setOriginNeighborhood($request['origin_neighborhood']);
+        $r->setOriginPhoneNumber($request['origin_phoneNumber']);
+        $r->setOriginState($request['origin_state']);
+        $r->setOriginZipCode($request['origin_zipCode']);
+        $r->setParcelTypeId($request['parcelTypeId']);
+        $r->setReference($request['reference']);
+        $r->setReturnDocument($request['returnDocument']);
+        $r->setServiceTypeId($request['serviceTypeId']);
+        $r->setWeight($request['weight']);
 
-        $this->_rawTrackingRequest = $r;
+        $this->setRawRequest($r);
+
+        return $this;
     }
 
-    /**
-     * Send request for tracking
-     *
-     * @param string[] $tracking
-     * @return void
-     */
-    protected function _getXMLTracking($tracking)
+    protected function _doRatesRequestLabel()
     {
-        $trackRequest = [
-            'WebAuthenticationDetail' => [
-                'UserCredential' => [
-                    'Key' => $this->getKey(),
-                    'Password' => $this->getPassword(),
-                ],
-            ],
-            'ClientDetail' => [
-                'AccountNumber' => $this->getFedexAccount(),
-                'MeterNumber' => $this->getMeterNumber(),
-            ],
-            'Version' => $this->getVersionInfoTraking(),
-            'SelectionDetails' => [
-                'PackageIdentifier' => ['Type' => 'TRACKING_NUMBER_OR_DOORTAG', 'Value' => $tracking],
-            ],
-            'ProcessingOptions' => 'INCLUDE_DETAILED_SCANS'
-        ];
-        $requestString = $this->serializer->serialize($trackRequest);
-
+        $ratesRequest = $this->_formLabelRequest();
         try {
-            $client = $this->_createTrackSoapClient();
-            $response = $client->track($trackRequest);
+            $client = $this->_createShipSoapClient();
+            $response = $client->CreateLabel($ratesRequest);
         } catch (\Exception $e) {
-            ['error' => $e->getMessage(), 'code' => $e->getCode()];
+            echo print_r(['error' => $e->getMessage(), 'code' => $e->getCode()],true);
         }
-
-        $this->_parseTrackingResponse($tracking, $response);
+        return $response;
     }
 
-    /**
-     * Parse tracking response
-     *
-     * @param string $trackingValue
-     * @param \stdClass $response
-     * @return void
-     */
-    protected function _parseTrackingResponse($trackingValue, $response)
+    protected function _formLabelRequest()
     {
-        if (!is_object($response) || empty($response->HighestSeverity)) {
-            $this->appendTrackingError($trackingValue, __('Invalid response from carrier'));
-            return;
-        } elseif (in_array($response->HighestSeverity, self::$trackingErrors)) {
-            $this->appendTrackingError($trackingValue, (string) $response->Notifications->Message);
-            return;
-        } elseif (empty($response->CompletedTrackDetails) || empty($response->CompletedTrackDetails->TrackDetails)) {
-            $this->appendTrackingError($trackingValue, __('No available tracking items'));
-            return;
-        }
-
-        $trackInfo = $response->CompletedTrackDetails->TrackDetails;
-
-        // Fedex can return tracking details as single object instead array
-        if (is_object($trackInfo)) {
-            $trackInfo = [$trackInfo];
-        }
-
-        $result = $this->getResult();
-        $carrierTitle = 'Fedex';
-        $counter = 0;
-        foreach ($trackInfo as $item) {
-            $tracking = new Status();
-            $tracking->setCarrier($this->_code);
-            $tracking->setCarrierTitle($carrierTitle);
-            $tracking->setTracking($trackingValue);
-            $tracking->addData($this->processTrackingDetails($item));
-            $result->append($tracking);
-            $counter ++;
-        }
-
-        // no available tracking details
-        if (!$counter) {
-            $this->appendTrackingError(
-                $trackingValue, 'For some reason we can\'t retrieve tracking info right now.'
-            );
-        }
-    }
-
-    /**
-     * Append error message to rate result instance
-     * @param string $trackingValue
-     * @param string $errorMessage
-     */
-    private function appendTrackingError($trackingValue, $errorMessage)
-    {
-        $error = new Error();
-        $error->setCarrier('fedex');
-        $error->setCarrierTitle('Fedex');
-        $error->setTracking($trackingValue);
-        $error->setErrorMessage($errorMessage);
-        $result = $this->getResult();
-        $result->append($error);
-    }
-
-    /**
-     * Parse track details response from Fedex
-     * @param $trackInfo
-     * @return array
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     * @SuppressWarnings(PHPMD.NPathComplexity)
-     */
-    private function processTrackingDetails($trackInfo)
-    {
-        $result = [
-            'shippeddate' => null,
-            'deliverydate' => null,
-            'deliverytime' => null,
-            'deliverylocation' => null,
-            'weight' => null,
-            'progressdetail' => [],
+        $r = $this->_rawRequest;
+        $ratesRequest = [
+            'valid' => $r->getValid(),
+            'suscriberId' => $this->getSuscriberId(),
+            'login' => $this->getUserLabel(), 
+            'password' => $this->getPasswordLabel(),
+            'customerNumber' => $r->getCustomerNumber(),
+            'quadrant' => $r->getQuadrant(),
+            'paperType' => $r->getPaperType(),
+            'labelDescriptionListCount' => $r->getLabelDescriptionListCount(),
+            'labelDescriptionList' => [
+                'aditionalInfo' => $r->getAditionalInfo(),
+                'content' => $r->getContent(),
+                'contentDescription' => $r->getContentDescription(),
+                'costCenter' => $r->getCostCenter(),
+                'deliveryToEstafetaOffice' => $r->getDeliveryToEstafetaOffice(),
+                'destinationCountryId' => $r->getDestinationCountryId(),
+                'destinationInfo' => [
+                    'address1' => $r->getDestinationAddress1(),
+                    'address2' => $r->getDestinationAddress2(),
+                    'cellPhone' => $r->getDestinationCellPhone(),
+                    'city' => $r->getDestinationCity(),
+                    'contactName' => $r->getDestinationContactName(),
+                    'corporateName' => $r->getDestinationCorporateName(),
+                    'customerNumber' => $r->getCustomerNumber(),
+                    'neighborhood' => $r->getDestinationNeighborhood(),
+                    'phoneNumber' => $r->getDestinationPhoneNumber(),
+                    'state' => $r->getDestinationState(),
+                    'valid' => $r->getValid(),
+                    'zipCode' => $r->getDestinationZipCode()
+                ],
+                'numberOfLabels' => $r->getNumberOfLabels(),
+                'officeNum' => $r->getOfficeNum(),
+                'originInfo' => [
+                    'address1' => $r->getOriginAddress1(),
+                    'address2' => $r->getOriginAddress2(),
+                    'cellPhone' => $r->getOriginCellPhone(),
+                    'city' => $r->getOriginCity(),
+                    'contactName' => $r->getOriginContactName(),
+                    'corporateName' => $r->getOriginCorporateName(),
+                    'customerNumber' => $r->getCustomerNumber(),
+                    'neighborhood' => $r->getOriginNeighborhood(),
+                    'phoneNumber' => $r->getOriginPhoneNumber(),
+                    'state' => $r->getOriginState(),
+                    'valid' => $r->getValid(),
+                    'zipCode' => $r->getOriginZipCode()
+                ],
+                'originZipCodeForRouting' => $r->getOriginZipCode(),
+                'parcelTypeId' => $r->getParcelTypeId(),
+                'reference' => $r->getReference(),
+                'returnDocument' => $r->getReturnDocument(),
+                //'serviceTypeIdDocRet' => '50',
+                'serviceTypeId' => $r->getServiceTypeId(),
+                'valid' => $r->getValid(),
+                'weight' => $r->getWeight(),
+            ],
         ];
-
-        $datetime = $this->parseDate(!empty($trackInfo->ShipTimestamp) ? $trackInfo->ShipTimestamp : null);
-        if ($datetime) {
-            $result['shippeddate'] = gmdate('Y-m-d', $datetime->getTimestamp());
-        }
-
-        $result['signedby'] = !empty($trackInfo->DeliverySignatureName) ?
-            (string) $trackInfo->DeliverySignatureName :
-            null;
-
-        $result['status'] = (!empty($trackInfo->StatusDetail) && !empty($trackInfo->StatusDetail->Description)) ?
-            (string) $trackInfo->StatusDetail->Description :
-            null;
-        $result['service'] = (!empty($trackInfo->Service) && !empty($trackInfo->Service->Description)) ?
-            (string) $trackInfo->Service->Description :
-            null;
-
-        $datetime = $this->getDeliveryDateTime($trackInfo);
-        if ($datetime) {
-            $result['deliverydate'] = gmdate('Y-m-d', $datetime->getTimestamp());
-            $result['deliverytime'] = gmdate('H:i:s', $datetime->getTimestamp());
-        }
-
-        $address = null;
-        if (!empty($trackInfo->EstimatedDeliveryAddress)) {
-            $address = $trackInfo->EstimatedDeliveryAddress;
-        } elseif (!empty($trackInfo->ActualDeliveryAddress)) {
-            $address = $trackInfo->ActualDeliveryAddress;
-        }
-
-        if (!empty($address)) {
-            $result['deliverylocation'] = $this->getDeliveryAddress($address);
-        }
-
-        if (!empty($trackInfo->PackageWeight)) {
-            $result['weight'] = sprintf(
-                '%s %s',
-                (string) $trackInfo->PackageWeight->Value,
-                (string) $trackInfo->PackageWeight->Units
-            );
-        }
-
-        if (!empty($trackInfo->Events)) {
-            $events = $trackInfo->Events;
-            if (is_object($events)) {
-                $events = [$trackInfo->Events];
-            }
-            $result['progressdetail'] = $this->processTrackDetailsEvents($events);
-        }
-
-        return $result;
+        return $ratesRequest;
     }
 
-    /**
-     * Parses datetime string from FedEx response.
-     * According to FedEx API, datetime string should be in \DateTime::ATOM format, but
-     * sometimes FedEx returns datetime without timezone and in that case timezone will be set as UTC.
-     *
-     * @param string $timestamp
-     * @return bool|\DateTime
-     */
-    private function parseDate($timestamp)
-    {
-        if ($timestamp === null) {
-            return false;
+    public function convertObjectToArray($data) {
+
+        if (is_object($data)) {
+            $data = get_object_vars($data);
         }
-        $formats = [\DateTime::ATOM, 'Y-m-d\TH:i:s'];
-        foreach ($formats as $format) {
-            // set UTC timezone for a case if timestamp does not contain any timezone
-            $utcTimezone = new \DateTimeZone('UTC');
-            $dateTime = \DateTime::createFromFormat($format, $timestamp, $utcTimezone);
-            if ($dateTime !== false) {
-                return $dateTime;
-            }
+    
+        if (is_array($data)) {
+            return array_map(array($this,__METHOD__), $data);
         }
-
-        return false;
-    }
-
-    /**
-     * Parse delivery datetime from tracking details
-     * @param \stdClass $trackInfo
-     * @return \Datetime|null
-     */
-    private function getDeliveryDateTime($trackInfo)
-    {
-        $timestamp = null;
-        if (!empty($trackInfo->EstimatedDeliveryTimestamp)) {
-            $timestamp = $trackInfo->EstimatedDeliveryTimestamp;
-        } elseif (!empty($trackInfo->ActualDeliveryTimestamp)) {
-            $timestamp = $trackInfo->ActualDeliveryTimestamp;
+        else {
+            return $data;
         }
-
-        return $timestamp ? $this->parseDate($timestamp) : null;
-    }
-
-    /**
-     * Get delivery address details in string representation
-     * Return City, State, Country Code
-     *
-     * @param \stdClass $address
-     * @return \Magento\Framework\Phrase|string
-     */
-    private function getDeliveryAddress(\stdClass $address)
-    {
-        $details = [];
-
-        if (!empty($address->City)) {
-            $details[] = (string) $address->City;
-        }
-
-        if (!empty($address->StateOrProvinceCode)) {
-            $details[] = (string) $address->StateOrProvinceCode;
-        }
-
-        if (!empty($address->CountryCode)) {
-            $details[] = (string) $address->CountryCode;
-        }
-
-        return implode(', ', $details);
-    }
-
-    /**
-     * Parse tracking details events from response
-     * Return list of items in such format:
-     * ['activity', 'deliverydate', 'deliverytime', 'deliverylocation']
-     *
-     * @param array $events
-     * @return array
-     */
-    private function processTrackDetailsEvents(array $events)
-    {
-        $result = [];
-        /** @var \stdClass $event */
-        foreach ($events as $event) {
-            $item = [
-                'activity' => (string) $event->EventDescription,
-                'deliverydate' => null,
-                'deliverytime' => null,
-                'deliverylocation' => null
-            ];
-
-            $datetime = $this->parseDate(!empty($event->Timestamp) ? $event->Timestamp : null);
-            if ($datetime) {
-                $item['deliverydate'] = gmdate('Y-m-d', $datetime->getTimestamp());
-                $item['deliverytime'] = gmdate('H:i:s', $datetime->getTimestamp());
-            }
-
-            if (!empty($event->Address)) {
-                $item['deliverylocation'] = $this->getDeliveryAddress($event->Address);
-            }
-
-            $result[] = $item;
-        }
-
-        return $result;
     }
 }
 
